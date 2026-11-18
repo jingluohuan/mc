@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#050a14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ITLZMC</title>
+<link rel="icon" type="image/jpeg" href="icon.jpg">
+<!-- ITLZMC · 本地静态版：全部平台 SDK、账号与外部服务已移除。 -->
+<script>
+  // 冷启动自愈：记录任何加载失败的 <script src>。
+  // 资源 error 事件不冒泡，必须在捕获阶段才收得到。
+  (function () {
+    window.__qiumcBadScripts = [];
+    window.addEventListener('error', function (e) {
+      var t = e.target;
+      if (t && t.tagName === 'SCRIPT' && t.src) window.__qiumcBadScripts.push(t.src);
+      else if (e && e.message && /not defined|not a constructor|Unexpected|SyntaxError/.test(e.message))
+        window.__qiumcBadScripts.push(String(e.message).slice(0, 120));
+    }, true);
+  })();
+</script>
+<style>
+  :root {
+    --bg-0: #050a14;
+    --bg-1: #0a1830;
+    --bg-2: #071120;
+    --line: rgba(125, 216, 255, .16);
+    --line-strong: rgba(125, 216, 255, .34);
+    --text: #eaf4ff;
+    --muted: #8fa8c8;
+    --accent: #7fd8ff;
+    --accent-2: #3b82f6;
+    --glass: rgba(14, 28, 52, .55);
+    --font: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg-0); color: var(--text); color-scheme: dark;
+    touch-action: none; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  }
+  canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+  #ui { pointer-events: none; }
+  #textinput { position: absolute; display: none; background: transparent; border: none; outline: none;
+    color: transparent; caret-color: transparent; font-family: monospace; padding: 0 2px; z-index: 5; }
+
+  /* ---------------- 加载动画 ---------------- */
+  #boot {
+    position: absolute; inset: 0; z-index: 10; pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px; overflow: hidden;
+    background:
+      radial-gradient(ellipse 70% 55% at 50% 42%, rgba(32, 96, 180, .30), transparent 70%),
+      radial-gradient(ellipse 50% 40% at 12% 88%, rgba(30, 70, 160, .20), transparent 72%),
+      radial-gradient(ellipse 45% 40% at 88% 10%, rgba(80, 160, 230, .14), transparent 72%),
+      linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 48%, var(--bg-2) 100%);
+    font-family: var(--font);
+    transition: opacity .55s ease, transform .55s ease, filter .55s ease;
+  }
+  #boot.done { opacity: 0; transform: scale(1.02); filter: blur(4px); }
+
+  .bg-grid {
+    position: absolute; inset: 0; opacity: .30;
+    background-image:
+      linear-gradient(rgba(125, 216, 255, .075) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(125, 216, 255, .075) 1px, transparent 1px);
+    background-size: 46px 46px;
+    mask-image: radial-gradient(ellipse 65% 60% at 50% 50%, #000 20%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 65% 60% at 50% 50%, #000 20%, transparent 100%);
+    animation: gridMove 24s linear infinite;
+  }
+  @keyframes gridMove { to { background-position: 46px 46px, 46px 46px; } }
+
+  .scan {
+    position: absolute; inset: -25%;
+    background: linear-gradient(105deg, transparent 43%, rgba(125, 216, 255, .055) 50%, transparent 57%);
+    animation: scan 7s linear infinite;
+  }
+  @keyframes scan { from { transform: translateX(-38%); } to { transform: translateX(38%); } }
+
+  .glow { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .35; }
+  .glow-a { width: 340px; height: 340px; left: 8%; top: 12%; background: #1d4ed8; animation: drift 14s ease-in-out infinite alternate; }
+  .glow-b { width: 280px; height: 280px; right: 6%; bottom: 8%; background: #0ea5e9; opacity: .20; animation: drift 18s ease-in-out infinite alternate-reverse; }
+  @keyframes drift { from { transform: translate3d(0,0,0) scale(1); } to { transform: translate3d(40px,30px,0) scale(1.15); } }
+
+  .pixel {
+    position: absolute; width: 7px; height: 7px; background: rgba(125, 216, 255, .35);
+    box-shadow: 0 0 10px rgba(125, 216, 255, .5); animation: float 9s linear infinite;
+  }
+  .p1 { left: 16%; top: 22%; animation-delay: 0s; }
+  .p2 { left: 78%; top: 18%; animation-delay: -2.4s; width: 5px; height: 5px; }
+  .p3 { left: 84%; top: 72%; animation-delay: -4.8s; }
+  .p4 { left: 22%; top: 78%; animation-delay: -6.6s; width: 5px; height: 5px; }
+  .p5 { left: 62%; top: 12%; animation-delay: -3.2s; width: 4px; height: 4px; }
+  .p6 { left: 34%; top: 14%; animation-delay: -5.5s; width: 4px; height: 4px; }
+  .p7 { left: 92%; top: 44%; animation-delay: -1.7s; width: 6px; height: 6px; }
+  .p8 { left: 8%; top: 54%; animation-delay: -7.9s; width: 5px; height: 5px; }
+  .p9 { left: 71%; top: 88%; animation-delay: -3.9s; width: 4px; height: 4px; }
+  @keyframes float { 0% { transform: translateY(0) rotate(0deg); opacity: 0; } 15% { opacity: .8; } 85% { opacity: .8; } 100% { transform: translateY(-78px) rotate(90deg); opacity: 0; } }
+
+  /* 3D 等距方块：六个面 + 持续旋转 + 上下浮动 */
+  .cube-wrap {
+    --s: clamp(58px, 8vw, 76px);
+    position: relative;
+    width: var(--s); height: var(--s); flex: 0 0 auto;
+    perspective: 460px;
+    animation: bob 4.5s ease-in-out infinite;
+  }
+  @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+  /* 阴影放在伪元素上：filter 若直接加在 .cube 上会强制 3D 扁平化，六个面就塌成一个平面 */
+  .cube-wrap::after {
+    content: ""; position: absolute; left: 14%; right: 14%; bottom: -13px; height: 13px;
+    border-radius: 50%; background: rgba(37, 99, 235, .5); filter: blur(9px);
+    animation: shadowPulse 4.5s ease-in-out infinite;
+  }
+  @keyframes shadowPulse { 0%, 100% { opacity: .85; transform: scaleX(1); } 50% { opacity: .5; transform: scaleX(.82); } }
+  .cube {
+    position: relative; width: 100%; height: 100%;
+    transform-style: preserve-3d;
+    transform: rotateX(-26deg) rotateY(-32deg);
+    animation: spin 9s linear infinite;
+  }
+  @keyframes spin {
+    0%   { transform: rotateX(-26deg) rotateY(0deg); }
+    50%  { transform: rotateX(-18deg) rotateY(180deg); }
+    100% { transform: rotateX(-26deg) rotateY(360deg); }
+  }
+  .face {
+    position: absolute; inset: 0;
+    border: 1px solid rgba(191, 219, 254, .48);
+    background-image:
+      linear-gradient(rgba(255, 255, 255, .11) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, .11) 1px, transparent 1px),
+      linear-gradient(155deg, #3b82f6, #1e3a8a);
+    background-size: 33.333% 33.333%, 33.333% 33.333%, 100% 100%;
+    box-shadow: inset 0 0 22px rgba(8, 20, 45, .45);
+  }
+  .face.top    { transform: rotateX(90deg)  translateZ(calc(var(--s) / 2));
+                 background-image: linear-gradient(rgba(255,255,255,.22) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.22) 1px, transparent 1px), linear-gradient(155deg, #cffafe, #38bdf8); }
+  .face.bottom { transform: rotateX(-90deg) translateZ(calc(var(--s) / 2));
+                 background-image: linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(155deg, #1e3a8a, #0b1a3a); }
+  .face.front  { transform: translateZ(calc(var(--s) / 2)); }
+  .face.back   { transform: rotateY(180deg) translateZ(calc(var(--s) / 2)); }
+  .face.right  { transform: rotateY(90deg)  translateZ(calc(var(--s) / 2)); }
+  .face.left   { transform: rotateY(-90deg) translateZ(calc(var(--s) / 2)); }
+  .face.back, .face.left {
+    background-image: linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px), linear-gradient(155deg, #2563eb, #172554);
+  }
+
+  .boot-card {
+    position: relative; width: min(520px, 92vw);
+    padding: clamp(24px, 4vw, 38px) clamp(22px, 4vw, 36px);
+    border: 1px solid var(--line-strong); border-radius: 20px;
+    background: linear-gradient(155deg, rgba(24, 46, 82, .55), rgba(8, 18, 36, .62));
+    -webkit-backdrop-filter: blur(26px) saturate(140%);
+    backdrop-filter: blur(26px) saturate(140%);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .10),
+                0 0 60px rgba(59, 130, 246, .12);
+    overflow: hidden;
+    animation: cardIn .65s cubic-bezier(.2, .8, .2, 1) backwards;
+  }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(20px) scale(.97); } to { opacity: 1; transform: none; } }
+  .boot-card::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: .7;
+    transform-origin: center; animation: lineSweep 3.6s ease-in-out infinite;
+  }
+  @keyframes lineSweep { 0%, 100% { opacity: .25; transform: scaleX(.4); } 50% { opacity: .9; transform: scaleX(1); } }
+  #boot.finish .boot-card {
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .55), 0 0 100px rgba(59, 130, 246, .38),
+                inset 0 1px 0 rgba(255, 255, 255, .16);
+  }
+
+  .brand { display: flex; align-items: center; gap: clamp(16px, 2.8vw, 26px); }
+  .brand-text h1 {
+    margin: 0; font-size: clamp(30px, 5.4vw, 46px); font-weight: 800; letter-spacing: .04em; line-height: 1.05;
+    background: linear-gradient(100deg, #ffffff 8%, var(--accent) 52%, #3b82f6 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .brand-text p { margin: 7px 0 0; font-size: clamp(11px, 1.6vw, 13px); letter-spacing: .18em;
+    color: var(--muted); text-transform: uppercase; }
+  .ver { position: relative; display: inline-block; overflow: hidden; margin-top: 10px; padding: 3px 9px;
+    font-size: 10px; letter-spacing: .14em; color: var(--accent); border: 1px solid var(--line-strong);
+    border-radius: 999px; background: rgba(59, 130, 246, .10); }
+  .ver::after { content: ""; position: absolute; inset: 0; transform: translateX(-120%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .38), transparent);
+    animation: badge 3.8s ease-in-out infinite; }
+  @keyframes badge { 0%, 60% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+
+  .divider { height: 1px; margin: clamp(22px, 3.6vw, 30px) 0 clamp(18px, 2.8vw, 24px);
+    background: linear-gradient(90deg, var(--line-strong), rgba(125, 216, 255, .04)); }
+
+  .progress-head { display: flex; justify-content: space-between; align-items: center;
+    font-size: clamp(12px, 1.7vw, 14px); color: var(--text); margin-bottom: 12px; }
+  .stage-wrap { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
+  .spin { width: 12px; height: 12px; flex: 0 0 auto; border: 2px solid rgba(125, 216, 255, .22);
+    border-top-color: var(--accent); border-radius: 50%; animation: rot .85s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  #boot.finish .spin { border-top-color: #4ade80; border-right-color: #4ade80; animation-duration: .35s; }
+  #bootstage { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #bootstage.stage-in { animation: stageIn .34s ease; }
+  @keyframes stageIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: none; } }
+  .progress-head .pct { font-family: var(--mono); font-size: clamp(15px, 2.2vw, 19px); font-weight: 600;
+    color: var(--accent); text-shadow: 0 0 16px rgba(125, 216, 255, .55); font-variant-numeric: tabular-nums; }
+
+  .bootbar { position: relative; height: 9px; border-radius: 999px; overflow: hidden;
+    background: rgba(125, 216, 255, .07); border: 1px solid rgba(125, 216, 255, .16); }
+  .bootbar i { display: block; position: relative; height: 100%; width: 0%; border-radius: 999px;
+    background: linear-gradient(90deg, #1d4ed8, #38bdf8 58%, #a5f3fc);
+    box-shadow: 0 0 16px rgba(125, 216, 255, .7); transition: width .18s ease-out; }
+  .bootbar i::before { content: ""; position: absolute; inset: 0; border-radius: 999px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .42), transparent);
+    transform: translateX(-100%); animation: sheen 1.7s linear infinite; }
+  @keyframes sheen { to { transform: translateX(100%); } }
+  .bootbar i .head { position: absolute; right: -3px; top: 50%; width: 11px; height: 11px;
+    transform: translateY(-50%); border-radius: 50%; background: #e0f7ff;
+    box-shadow: 0 0 15px 3px rgba(125, 216, 255, .8); }
+  .bootbar .ticks { position: absolute; inset: 0; pointer-events: none; opacity: .5;
+    background-image: repeating-linear-gradient(90deg, transparent 0, transparent calc(10% - 1px), rgba(5, 10, 20, .55) calc(10% - 1px), rgba(5, 10, 20, .55) 10%); }
+  #boot.finish .bootbar i { box-shadow: 0 0 28px rgba(125, 216, 255, .95); }
+
+  .boot-status { display: flex; flex-wrap: wrap; gap: 8px clamp(10px, 2.4vw, 22px); margin-top: 22px;
+    font-size: clamp(11px, 1.5vw, 12px); color: var(--muted); }
+  .boot-status span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+    animation: tagIn .55s ease backwards; animation-delay: var(--d, 0s); }
+  @keyframes tagIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80;
+    box-shadow: 0 0 9px rgba(74, 222, 128, .8); animation: pulse 2.2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+  /* ---------------- 启动错误 ---------------- */
+  /* 联机房间成员：即使 3D 模型被遮挡也能看到对方名字、方位与距离 */
+  #party {
+    position: fixed; right: 12px; top: 12px; z-index: 60; display: none;
+    max-width: 42vw; padding: 10px 13px; border-radius: 14px;
+    background: rgba(8, 18, 34, .72); border: 1px solid rgba(125, 216, 255, .22);
+    box-shadow: 0 8px 26px rgba(0, 0, 0, .38); backdrop-filter: blur(10px);
+    color: #dbeafe; font: 12px/1.75 system-ui, -apple-system, sans-serif;
+    pointer-events: none; user-select: none; white-space: nowrap;
+  }
+  #party b { display: block; color: #7dd3fc; font-size: 12px; letter-spacing: .08em; margin-bottom: 3px; }
+  #party .p { color: #bbf7d0; }
+  #party .far { color: #fcd34d; }
+  #err {
+    position: absolute; z-index: 20; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    display: none; width: min(560px, 88vw); padding: 28px 30px;
+    border: 1px solid rgba(248, 113, 113, .35); border-radius: 18px;
+    background: rgba(30, 14, 24, .72); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+    color: #ffe4e4; font: 14px/1.75 var(--font); white-space: pre-wrap; text-align: left;
+    -webkit-user-select: text; user-select: text;
+  }
+
+  @media (max-width: 560px) {
+    #boot { padding: 16px; }
+    .boot-card { border-radius: 16px; }
+    .boot-status { gap: 8px 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .bg-grid, .scan, .glow, .pixel, .cube, .cube-wrap, .cube-wrap::after, .spin, .dot,
+    .boot-card, .boot-card::before, .ver::after, .boot-status span,
+    .bootbar i::before, #bootstage.stage-in { animation: none !important; }
+    .bootbar i, #boot { transition-duration: .01s !important; }
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="ui"></canvas>
+<input id="textinput" type="text" autocomplete="off" spellcheck="false">
+
+<div id="boot">
+  <div class="bg-grid"></div>
+  <div class="scan"></div>
+  <div class="glow glow-a"></div>
+  <div class="glow glow-b"></div>
+  <i class="pixel p1"></i><i class="pixel p2"></i><i class="pixel p3"></i><i class="pixel p4"></i><i class="pixel p5"></i>
+  <i class="pixel p6"></i><i class="pixel p7"></i><i class="pixel p8"></i><i class="pixel p9"></i>
+  <div class="boot-card">
+    <div class="brand">
+      <div class="cube-wrap">
+        <div class="cube">
+          <div class="face top"></div><div class="face bottom"></div>
+          <div class="face front"></div><div class="face back"></div>
+          <div class="face right"></div><div class="face left"></div>
+        </div>
+      </div>
+      <div class="brand-text">
+        <h1>ITLZMC</h1>
+        <p>网页里的 MINECRAFT</p>
+        <span class="ver">ITLZ TECH · 本地运行</span>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="progress-head">
+      <span class="stage-wrap"><i class="spin"></i><span id="bootstage">正在初始化…</span></span>
+      <span class="pct" id="bootpct">0%</span>
+    </div>
+    <div class="bootbar"><i id="bootfill"><b class="head"></b></i><span class="ticks"></span></div>
+    <div class="boot-status">
+      <span style="--d:.35s"><em class="dot"></em>本地运行</span>
+      <span style="--d:.5s"><em class="dot"></em>存档只保存在本机</span>
+      <span style="--d:.65s"><em class="dot"></em>WebGL2 渲染</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 加载动画控制器：进度按已到达的 <script src> 数量推进，游戏标题就绪后冲到 100%，
+  // 并保证至少完整播放 MIN_SHOW 毫秒（本地秒开时也能看清动画，而不是一闪而过）。
+  (function () {
+    var boot = document.getElementById('boot'),
+        fill = document.getElementById('bootfill'),
+        pct = document.getElementById('bootpct'),
+        stage = document.getElementById('bootstage'),
+        t0 = performance.now(), MIN_SHOW = 1650,
+        total = 90, got = 0, shown = 0, readyAt = 0, finished = false;
+
+    document.addEventListener('load', function (e) {
+      if (e.target && e.target.tagName === 'SCRIPT' && e.target.src) got++;
+    }, true);
+
+    function label(p) {
+      if (p < 16) return '正在初始化…';
+      if (p < 38) return '正在加载核心模块';
+      if (p < 62) return '正在解码方块与实体数据';
+      if (p < 80) return '正在构建材质与音效';
+      return '正在准备标题世界';
+    }
+    function setStage(t) {
+      if (stage.textContent === t) return;
+      stage.classList.remove('stage-in');
+      void stage.offsetWidth;
+      stage.textContent = t;
+      stage.classList.add('stage-in');
+    }
+    function tick() {
+      if (finished) return;
+      var elapsed = performance.now() - t0, cap = 96;
+      if (!readyAt) {
+        var want = got < total ? 84 * got / total : 84 + 12 * (1 - Math.exp(-elapsed / 3200));
+        shown = Math.max(shown, Math.min(cap, want));
+      } else {
+        cap = elapsed >= MIN_SHOW ? 100 : 99;
+        shown = Math.min(cap, shown + Math.max(1.2, (cap - shown) * 0.16));
+      }
+      fill.style.width = shown.toFixed(1) + '%';
+      pct.textContent = Math.floor(shown) + '%';
+      if (!readyAt) setStage(label(shown));
+      else if (shown >= 99) setStage('准备就绪');
+      if (readyAt && elapsed >= MIN_SHOW && shown >= 99.5) { finish(); return; }
+      setTimeout(tick, 60);
+    }
+    function finish() {
+      if (finished) return;
+      finished = true;
+      fill.style.width = '100%';
+      pct.textContent = '100%';
+      setStage('准备就绪');
+      boot.classList.add('finish');
+      // 收尾不能只靠嵌套 setTimeout：后台标签页 / 无头环境会节流定时器，
+      // 一旦那一环没跑，加载层就会永久盖住游戏。用 rAF（游戏主循环持续调度）
+      // 计时完成淡出，再留一个 setTimeout 兜底，二者任一触发都让位。
+      var t0f = performance.now(), hidden = false;
+      var hide = function () {
+        if (hidden) return;
+        hidden = true;
+        boot.classList.add('done');
+        boot.style.display = 'none';
+      };
+      (function step(now) {
+        if (now - t0f >= 980) { hide(); return; }
+        requestAnimationFrame(step);
+      })(t0f);
+      setTimeout(hide, 1200);
+    }
+    function hideNow() {
+      finished = true;
+      boot.style.display = 'none';
+    }
+    window.__boot = {
+      setTotal: function (n) { if (n > 0) total = n; },
+      ready: function () { if (!readyAt) readyAt = performance.now(); },
+      finish: finish,
+      hide: hideNow
+    };
+    tick();
+    // 切回标签页时立刻让位：后台期间定时器被节流，回来时不再多等一轮
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && boot.style.display !== 'none' && (readyAt || finished)) hideNow();
+    });
+    // 游戏标题就绪 / 启动失败时通知加载层；单独轮询，不与进度循环耦合
+    (function wait() {
+      if (boot.style.display === 'none') return;
+      // #err 在本脚本之后才进入 DOM，必须实时查询：启动失败时让加载层立刻让位给错误框
+      var errBox = document.getElementById('err');
+      if (errBox && errBox.style.display === 'block') { hideNow(); return; }
+      if (window.game && window.game.state !== 'boot') window.__boot.ready();
+      // 兜底：淡出一开始，就由本轮询负责最终隐藏。后台标签页 / 无头环境会
+      // 节流 rAF 与定时器，标题就绪后最多再等 3 秒就强制让位，绝不盖住游戏。
+      if (readyAt && performance.now() - readyAt > 3000) { hideNow(); return; }
+      if (finished) boot.style.display = 'none';
+      setTimeout(wait, 60);
+    })();
+  })();
+</script>
+
+<div id="err"></div>
+<div id="party" aria-hidden="true"></div>
+<script src="js/assets.js?v=qiumc15"></script>
+<script src="js/font.js?v=qiumc15"></script>
+<script src="js/emoji.js?v=qiumc15"></script>
+<script src="js/texts.js?v=qiumc15"></script>
+<script src="js/util.js?v=qiumc15"></script>
+<script src="js/worldgen_data.js?v=qiumc15"></script>
+<script src="js/worldgen.js?v=qiumc15"></script>
+<script src="js/blockdata.js?v=qiumc15"></script>
+<script src="js/itemdata.js?v=qiumc15"></script>
+<script src="js/recipedata.js?v=qiumc15"></script>
+<script src="js/blocks.js?v=qiumc15"></script>
+<script src="js/world.js?v=qiumc15"></script>
+<script src="js/mesher.js?v=qiumc15"></script>
+<script src="js/models.js?v=qiumc15"></script>
+<script src="js/vmodels.js?v=qiumc15"></script>
+<script src="js/render.js?v=qiumc15"></script>
+<script src="js/render2.js?v=qiumc15"></script>
+<script src="js/shaders.js?v=qiumc15"></script>
+<script src="js/audio.js?v=qiumc15"></script>
+<script src="js/subtitles.js?v=qiumc15"></script>
+<script src="js/entity.js?v=qiumc15"></script>
+<script src="js/mobs2.js?v=qiumc15"></script>
+<script src="js/ui.js?v=qiumc15"></script>
+<script src="js/save.js?v=qiumc15"></script>
+<script src="js/game.js?v=qiumc15"></script>
+<script src="js/terrain2.js?v=qiumc15"></script>
+<script src="js/features.js?v=qiumc15"></script>
+<script src="js/trees.js?v=qiumc15"></script>
+<script src="js/structures_data.js?v=qiumc15"></script>
+<script src="js/structgen.js?v=qiumc15"></script>
+<script src="js/structtypes.js?v=qiumc15"></script>
+<script src="js/gen_worker.js?v=qiumc15"></script>
+<script src="js/structures.js?v=qiumc15"></script>
+<script src="js/nbt.js?v=qiumc15"></script>
+<script src="js/anvil.js?v=qiumc15"></script>
+<script src="js/export.js?v=qiumc15"></script>
+<script src="js/screens.js?v=qiumc16"></script>
+<script src="js/commands.js?v=qiumc15"></script>
+<script src="js/controls.js?v=qiumc15"></script>
+<script src="js/dims.js?v=qiumc15"></script>
+<script src="js/nether_mobs.js?v=qiumc15"></script>
+<script src="js/village_mobs.js?v=qiumc15"></script>
+<script src="js/merchant.js?v=qiumc15"></script>
+<script src="js/effects.js?v=qiumc15"></script>
+<script src="js/enchant.js?v=qiumc15"></script>
+<script src="js/workstations.js?v=qiumc15"></script>
+<script src="js/equip.js?v=qiumc15"></script>
+<script src="js/vehicles.js?v=qiumc15"></script>
+<script src="js/redstone.js?v=qiumc15"></script>
+<script src="js/itemuse.js?v=qiumc15"></script>
+<script src="js/entitydata.js?v=qiumc15"></script>
+<script src="js/etex.js?v=qiumc15"></script>
+<script src="js/emodel.js?v=qiumc15"></script>
+<script src="js/vmobs.js?v=qiumc15"></script>
+<script src="js/mobs_animals.js?v=qiumc15"></script>
+<script src="js/mobs_water.js?v=qiumc15"></script>
+<script src="js/mobs_hostile.js?v=qiumc15"></script>
+<script src="js/mobitems.js?v=qiumc15"></script>
+<script src="js/spawning.js?v=qiumc15"></script>
+<script src="js/draw2.js?v=qiumc15"></script>
+<script src="js/blockents.js?v=qiumc15"></script>
+<script src="js/decor.js?v=qiumc15"></script>
+<script src="js/items3.js?v=qiumc15"></script>
+<script src="js/specials.js?v=qiumc15"></script>
+<script src="js/raids.js?v=qiumc15"></script>
+<script src="js/cmdrun.js?v=qiumc15"></script>
+<script src="js/main.js?v=qiumc15"></script>
+<script src="js/touch.js?v=qiumc15"></script>
+<script src="js/perf.js?v=qiumc15"></script>
+<script>/* 房间服务地址由本站 server.js 自动提供，无需任何人配置 */
+window.NET_CONFIG = { rooms: (location.protocol === "http:" || location.protocol === "https:") ? location.origin : "", share: "" };</script>
+<script src="js/net.js?v=qiumc15"></script>
+<script src="js/beacon.js?v=qiumc15"></script>
+<script src="js/cmdblock.js?v=qiumc15"></script>
+<script src="js/telemetry.js?v=qiumc15"></script>
+<script src="js/toy.js?v=qiumc15"></script>
+<script src="js/account.js?v=qiumc15"></script>
+<script src="js/capes.js?v=qiumc15"></script>
+<script src="js/skins.js?v=qiumc15"></script>
+<script src="js/cloudsave.js?v=qiumc15"></script>
+<script src="js/social.js?v=qiumc15"></script>
+<script src="js/mobile.js?v=qiumc15"></script>
+<script src="js/onboard.js?v=qiumc15"></script>
+<script src="js/companion.js?v=qiumc15"></script>
+<script src="js/extras.js?v=qiumc15"></script>
+<script src="js/cosmetics.js?v=qiumc15"></script>
+<script src="js/news.js?v=qiumc15"></script>
+<script src="js/checkin.js?v=qiumc15"></script>
+<script src="js/p2p.js?v=qiumc15"></script>
+<script src="js/panorama_data.js?v=qiumc15"></script>
+<script src="js/panorama.js?v=qiumc15"></script>
+<script src="js/plugin-keys.js?v=qiumc15"></script><!-- 插件按键引擎：自动检测 + 手机端虚拟按钮 -->
+<script src="js/plugins.js?v=qiumc15"></script><!-- ITLZMC 原生插件系统 + 插件市场 -->
+<script src="js/servers.js?v=qiumc16"></script><!-- 常驻服务器 -->
+<script>
+  // 全部模块已解析：把真实数量交给加载动画，并等待游戏标题就绪后收尾
+  window.__boot && window.__boot.setTotal(document.querySelectorAll('script[src]').length);
+  (function ready() {
+    if (window.game && window.game.state !== 'boot') { window.__boot && window.__boot.ready(); return; }
+    setTimeout(ready, 60);
+  })();
+</script>
+
+</body>
+</html>

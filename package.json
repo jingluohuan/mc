@@ -1,0 +1,7 @@
+{
+  "name": "itlzmc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ITLZMC 本地运行版：静态站点 + 房间服务 + 本地房间信令",
+  "main": "server.js"
+}

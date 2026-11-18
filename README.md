@@ -1,0 +1,338 @@
+# ITLZMC
+
+ITLZ TECH 本地运行版网页方块世界。纯前端游戏 + 一体化 Node 服务（静态站点 / 房间列表 / 联机信令 / **常驻服务器**），无构建、无 npm 依赖、玩游戏无需登录（仅开发者提交插件可选注册）、不连接任何第三方平台；联机带心跳保活与断线自动重连，短暂掉线不踢人、不丢房间。
+
+## 运行
+
+**必须用 HTTP 服务打开，不能双击 `index.html`**（音效 `fetch`、地形 Web Worker、联机 WebSocket 在 `file://` 下都会被拦）。
+
+```bash
+cd ITLZMC
+./start.sh              # 默认 8080，可 ./start.sh 9000
+# 等价于：node server.js（PORT 环境变量可覆盖）
+```
+
+浏览器打开 `http://localhost:8080/`，需要 WebGL2。`server.js` 同时提供：静态资源、房间 REST 接口、`/p2p` 联机信令、`/srv` 常驻服务器枢纽、正版皮肤查询，以及 WebSocket 心跳保活与断线宽限期。
+
+## 线上地址
+
+一体化 Node 服务已部署，打开即玩（多人游戏 / 邀请码 / 房间列表都在服务端，不用自己搭服务器）：
+
+```
+https://a23dc3393acb531d3.app.workbuddy.host/?sharecode=4AK3QS2M26&v=qiumc15
+```
+
+`&v=qiumc15` 只是绕开手机浏览器残留的旧页面缓存，**不是要你配置的东西**；旧链接同样能用，服务端对 HTML/JS 已下发 `no-store`。
+
+只跑静态站点（`python3 -m http.server 8080`）也能单机玩，但多人游戏、邀请码与正版皮肤查询需要 `server.js`。部署时直接把这个目录作为 Node 服务启动即可（已带 `package.json`，`main: server.js`，注入 `PORT` 生效）。
+
+## 多人游戏（已还原）
+
+| 入口 | 行为 |
+| --- | --- |
+| 标题 →「多人游戏」 | 公开房间列表、邀请码加入、开房间、我的房间、直接连接（局域网），**无登录门槛** |
+| 「开房间」/ 暂停菜单「开房间」 | **点一下就开好**：自动载入世界、自动生成 8 位邀请码、自动登记到房间服务，最多 4 人 |
+| 朋友输入邀请码 / 点「进入」 | 通过 `/p2p` WebSocket 由服务器中转，共享方块、实体、背包、聊天（不需要两人网络能直连） |
+| 「直接连接（局域网）」 | 填自己的 WebSocket 中转地址（需要 Java 版服务端协议桥） |
+
+- **服务器地址不用填、不用配**：`window.NET_CONFIG` 内联在 `index.html`，`RoomService.base()` 永远回退到 `location.origin`；即使浏览器缓存了旧版配置，也自动连当前站点自带的 `server.js`。
+- **旧缓存自动绕过**：90 个脚本（含动态加载的 `sound_events.js`）全部带 `?v=qiumc15`，HTML/JS 响应头 `no-store`；手机、平板不用清缓存，重新打开就是新版。
+- 打开多人游戏时**公开房间列表自动加载**，不再出现「还没有配置联机服务器地址（js/netconfig.js）」这类要玩家自己改文件的红字；输入不存在的邀请码会明确提示「没有找到这个房间」。
+- 房间服务与游戏**同源**，由 `server.js` 提供：`/api/public`、`/api/capacity`、`/api/rooms`、`/api/p2p/has`、`/api/skin`。
+- 邀请链接会保留部署平台的 `?sharecode=`；同域 REST 与 WS 请求也会自动带上。
+- 玩家名可在多人游戏界面自己改，写入 `mcjs-settings`，本地房间 / 聊天 / 装扮预览共用。
+- **房间数据由服务器直接中转**：房主与客人都只连本站 `/p2p` WebSocket，方块、实体、背包、聊天全部由 `server.js` 转发，不依赖 WebRTC 打洞 / STUN / TURN，手机网络、跨网、对称 NAT 都能进房间，不会再出现「没连上房主」。
+- **断线自动重连**：服务端每 20 秒发一次 WebSocket ping，客户端每 20 秒也发心跳，避免代理 / NAT 因空闲掐线；房主掉线保留房间 90 秒、客人掉线保留槽位 60 秒，期间数据帧暂存。重连后用原邀请码 / 原槽位恢复，已在房间里的玩家不受影响、不用重开房间，超过宽限期才真正关闭。
+- 默认零外部连接；若将来切回 WebRTC 直连模式，可用环境变量配置打洞服务器：
+
+```bash
+QIUMC_STUN=stun:stun.l.google.com:19302 ./start.sh
+QIUMC_TURN=turn:your-turn:3478 QIUMC_TURN_USER=... QIUMC_TURN_CRED=... ./start.sh
+```
+
+> 原版的「服务器房间」（`/ws`）依赖一个真实的 Minecraft Java 服务端协议桥，纯前端项目里无法复刻；`/ws` 路径仍保留给「直接连接」。现在「长期运行的服务器」由本项目自研的**常驻服务器**提供（见下一节），不依赖任何 Java 服务端。
+
+## 常驻服务器（长期运行 / 房主退出不停服）
+
+标题界面 →「服务器」，或直接在大厅「多人游戏」里点带 `[长期]` 标记的房间。
+
+| 能力 | 说明 |
+| --- | --- |
+| 长期运行 | 服务器由 Node 进程托管，**没有房主概念**；创建者退出、所有人退出，服务器都照常在，任何人随时能加进来 |
+| 世界持久化 | 方块变更、方块实体、玩家存档、聊天、世界时钟落在 `.itlzmc/servers/<邀请码>.json`，12 秒自动存盘，进程重启自动恢复；世界时钟即使没人在线也继续推进 |
+| 权威同步 | `/srv` WebSocket 由服务端转发所有玩家的位置 / 朝向 / 皮肤 / 披风、方块变更、箱子、聊天，客户端按同一 `seed` 确定性生成地形后补齐差异；不依赖 WebRTC 打洞，也不依赖某个玩家一直在线 |
+| 服务器插件 | 每个服务器可启用 ITLZMC 原生插件（官方 / 市场 / AI 提交的插件），成员进入时服务端下发源码、客户端校验后幂等加载；**只支持原生插件，不加载 Mod / Forge / Fabric / .jar** |
+| 公开列表 | `GET /api/servers` 与 `/api/public` 都会列出，邀请码 / 邀请链接可直接分享 |
+
+线上已预置 **ITLZ 官方大厅**（邀请码 `44CGD8`，16 人，启用 5 个插件），打开就能直接进。
+
+## 正版玩家皮肤
+
+皮肤界面「正版玩家的皮肤」现在走同源 `/api/skin`，由服务器向 Mojang 官方接口查询（**只有用到这个功能时才会产生外部请求，浏览器本身始终零外部请求**）。查不到时给明确中文说明，不再出现含糊的「联机服务器没有回应」。预设皮肤完全离线可用。
+
+## 特点
+
+- **启动零外部请求**：平台容器 SDK、账号体系、云存档、遥测、公告、签到全部本地降级
+- **玩游戏不需要登录**：没有强制账号、识别码、云端身份；只有「让 AI 通过 API 提交插件到市场」才需要可选注册一枚开发者 Key。首次进入只需一次本地协议确认
+- **完整首次进入引导**：协议 → 玩家类型 → 画质性能检测 → 设备检测 → 差异说明
+- **全部装扮默认解锁**，改动保存在本机
+- **加载动画**：3D 旋转方块 + 液态玻璃卡片 + 分阶段进度，保证完整播放，响应式
+- 游戏内 UI 保持原版像素风，避免破坏还原度
+
+## 首次进入引导
+
+第一次打开依次经过（完成后写入 `localStorage`，以后不再出现）：
+
+| 步骤 | 界面 | 内容 |
+| --- | --- | --- |
+| 0 | 开始屏幕 / 协议 | 「欢迎来到 ITLZMC」，勾选同意《用户协议》《隐私说明》 |
+| 1 | 你是哪种玩家？ | 决定教程、提示、小地图等默认开关 |
+| 2 | 画质与光影检测 | 实时测量帧耗时，显示显卡 / 线程 / 内存，自动推荐画质 + 光影 |
+| 2b | 你用什么设备玩？ | 自动标注「检测到的设备」，选手机进触屏布局编辑器 |
+| 3 | 差异说明 / 更新内容 | 4 页本地版说明 |
+
+引导还会挂上游戏内情景提示与新手教程。底层设备判定（`TouchDevice`）、画质档位与动态分辨率（`perf.js`）、视频设置里的「画质预设 / 复制性能报告」全部保留可用。**引导链里的登录步骤已删除**。
+
+## 改动
+
+原始实现中 10 个平台模块含网络 / 账号逻辑，现已替换为同名的**纯本地实现**（保持导出符号不变）。
+
+| 模块 | 处理 |
+| --- | --- |
+| `js/toy.js` | 平台容器 SDK → 全部本地降级，`ready()` 返回 `false` |
+| `js/account.js` | 账号 / 识别码 / 门槛 → 本地身份 + 可改玩家名 + 全解锁 |
+| `js/telemetry.js` | 埋点、错误上报、反馈接口 → no-op |
+| `js/news.js` / `js/checkin.js` | 外部公告、活动接口 → 空列表 / 默认解锁，不请求 |
+| `js/cloudsave.js` | 云存档 → 存档只写本机 |
+| `js/social.js` | 内容审核、邀请卡 → 本地提示 |
+| `js/onboard.js` | **保留完整首次引导**，仅删除登录步骤与在线协议文案 |
+| `js/p2p.js` | 恢复本地房间实现；数据改为服务器中转（不依赖 WebRTC 打洞），并加入心跳保活与断线自动重连 |
+| `js/netconfig.js` / `index.html` | 房间服务地址内联并固定为**同源**（`location.origin`），全部脚本带版本号破缓存 |
+| `js/net.js` | 联机客户端完整保留；`RoomService.base()` 加同源兜底、支持 sharecode、名字可改、报错文案明确化 |
+| `server.js` / `package.json` | 新增：零依赖一体化服务（静态 + REST + 信令 + 皮肤代理 + 心跳保活 + 断线宽限期与房间恢复） |
+
+配套改动：`index.html` 删除平台埋点与 iframe 防脱离跳转、重做加载动画；`js/screens.js` 恢复「多人游戏」按钮并移除登录 / 解锁 / 在线反馈；`js/extras.js` 截图卡片改本地保存；`js/skins.js` 皮肤查询友好降级 + `willReadFrequently`；`js/blocks.js` 涂蜡铜门图标别名回退。全项目统一品牌 `ITLZMC`，无作者 / 来源字样。
+
+## 加载动画
+
+- 深蓝黑渐变 + 平移细网格 + 扫光带 + 9 个漂浮粒子 + 液态玻璃卡片
+- **CSS 3D 六面立方体**持续旋转（顶面亮青 / 侧面深蓝，阴影放在伪元素上，避免 `filter` 压平 3D）
+- 分阶段进度文案、发光渐变进度条、等宽百分比
+- **至少完整播放 1.65 秒**；收尾用 rAF + `setTimeout` + 持续轮询三重兜底，避免后台节流时加载层永久盖住游戏
+- `clamp()` 响应式；`prefers-reduced-motion` 下关闭动效
+
+## 插件系统（API 1.0）
+
+`js/plugins.js` 是 ITLZMC 唯一的扩展引擎，**只加载 ITLZMC 原生插件，不支持 Mod / 模组**（没有 Forge / NeoForge / Fabric、没有 `.jar`、没有 `mods.toml` / `fabric.mod.json` / `mcmod.info`，也不解析 `pack.mcmeta` 与 `data/**/recipes/*.json`）。全部本地同源、零外部依赖。
+
+| 来源 | 加载方式 |
+| --- | --- |
+| JS 插件 `.js` | `ITLZMC.plugin(meta, factory)`，注册贴图 / 方块 / 物品 / 配方 / 指令、挂机制钩子 |
+| 原生插件包 `.zip` | `plugin.json` 清单（`main` 可指向包内 JS）+ `assets/**/textures/**.png` 贴图 |
+
+**加载**：`plugins/` 根目录的 `.js/.zip` 启动时自动发现（`/api/plugins`）；`?plugin=路径` 可重复指定；标题界面「插件市场」一键安装官方插件、创作自己的插件、一键下载 AI Skill；选项 →「插件市场…」可管理已装插件与手填 URL。所有插件在所有游戏模块之后、`new Game()` 之前完成注册与图集重绘。
+
+运行时命名空间是 **`ITLZMC.Plugins`**（`ITLZMC.plugin(...)` 为注册入口），加载结束时派发 `pluginsLoaded` 事件。
+
+**三类能力**
+
+| 能力 | API |
+| --- | --- |
+| 渲染贴图 | `P.addTexture(name, dataURL)` / `P.addTextureAt(idx, dataURL)` / `P.defineBlock({ tex, textures, png })` |
+| 修改机制 | `P.on('blockBreak'｜'dropItem'｜'damage'｜'useItem'｜'command'｜'craft'｜'blockPlace'｜'explode'｜'entitySpawn'｜'message', fn)` |
+| 增加指令 | `P.addCommand(name, { fn, description, usage, aliases })` |
+
+机制事件回调收到**可变 `ctx`**：改字段即改游戏行为（`c.amount = 0`、`c.count *= 2`），`ctx.cancel()` 阻止原操作；另有 `P.intercept(proto, method, wrapper)` 可包装任意游戏原型方法。生命周期事件 `tick / ready / gameInit / pluginsLoaded` 的回调直接收到 `game`。共挂载 **14 组钩子**，所有回调由框架隔离，单个插件报错不拖垮游戏。完整签名见 `skills/itlzmc-plugin-dev/references/API.md` 与 `EVENTS.md`。
+
+## 跨端按键（手机端没有物理键盘）
+
+> **痛点**：插件写「按下波浪键 `~`（`Backquote`）连锁挖矿」，桌面能跑，手机没有这个物理键，功能永远触发不了；
+> 而插件系统过去也没有「注册按键」的入口。现在由 `js/plugin-keys.js` **全自动处理**。
+
+| 插件写法 | 桌面 / EXE | 手机 / 平板 / APK |
+| --- | --- | --- |
+| `P.addKey('veinMine', { code:'Backquote', label:'连锁挖矿', mode:'hold', onDown: fn })` | 自动转发 `keydown`/`keyup` 到 `onDown`/`onUp` | **自动生成「连锁挖矿」屏幕虚拟按钮**（游戏画面右侧中上部，暗色玻璃面板，可收起） |
+| `P.isKeyDown('veinMine')` | 物理键按住状态 | 按屏幕按钮同样算按住 |
+| 老写法：自己 `addEventListener('keydown')` 判断 `e.code` / `e.key` / `g.keys[...]` | 照常能跑 | **启动时静态扫描源码自动检测按键码、自动生成按钮**；按下时合成真实 `KeyboardEvent` 并写 `g.keys[code]`，插件零改动即可用 |
+
+**规范**：新插件一律用 `P.addKey` 声明，不要自己监听 `keydown` / 读 `g.keys`；自动检测只是给老插件兜底。
+`code` 用 `KeyboardEvent.code`（`Backquote` / `KeyB` / `F6` / `Digit0`…），避开原版键
+（`KeyW/A/S/D`、`Space`、`KeyE`、`KeyQ`、`KeyF`、`KeyT`、`Digit1`–`Digit9`、`KeyV` 原版 AI 伙伴、`KeyH`、`KeyL`、`Escape`、`F1/F2/F3/F5/F11`）。
+按住状态用 `P.isKeyDown(id)`，也可监听 `keyDown` / `keyUp` 事件。
+
+**加载顺序**：`js/plugin-keys.js` 必须在 `js/plugins.js` **之前**加载；面板只在触屏设备 + 进入游戏 + 未打开菜单时出现，
+桌面不会多出按钮，没有任何插件声明按键时面板完全不显示。
+
+**已在市场内置**：「连锁挖矿」官方插件（`plugins/store/itlzmc-vein-miner.js`），一键安装即可在手机上看到按钮。
+完整字段表、code 对照、自动检测原理与常见错误见 `skills/itlzmc-plugin-dev/references/KEYS.md`。
+
+控制台调试：`ITLZMC.Plugins.keybinds()`、`ITLZMC.Plugins.isKeyDown('veinMine')`、`QIUMCKeys.list()`。
+
+## 插件市场（标题界面直接可进）
+
+> **登录入口**：标题界面与首次协议页都有「**登录 / 注册 · 开发者 Key**」按钮，一键直达开发者中心；插件市场底部也有「**登录 / 注册**」。**注册 / 登录成功后，这三处会自动变成你的账号名**（如 `● 开发者：huihui`），退出登录再变回「登录 / 注册」。普通玩家浏览 / 安装 / 创作插件、下载 AI Skill **全程免登录**。
+
+### 开发者 Key 与 API 提交（给 AI 用）
+
+| 步骤 | 操作 |
+| --- | --- |
+| 1 | 开始界面点「登录 / 注册 · 开发者 Key」→ 填用户名 + 密码 → 点「注册拿 Key」，立刻拿到 `qkey_…` |
+| 2 | 点「复制给 AI」，把 **带 sharecode 的完整 API 地址**、Key、提交方式、校验规则一整段粘给 AI |
+| 3 | AI 用 `POST /api/plugins/submit?sharecode=<分享码>`（请求头 `X-ITLZMC-Key: <Key>`，body `{"code":"<插件源码>"}`）提交 |
+| 4 | 服务端依次校验：字段规范 → 危险 API 黑名单 → 语法编译 → `vm` 沙箱试运行 → 至少注册一项能力 → id 冲突；**全部通过才上架**，否则返回具体原因 |
+| 5 | 上架后市场自动可见，玩家一键安装；作者可在开发者中心刷新状态 / 下架 / 重置 Key / 退出登录 |
+
+> ⚠️ **每个 API 请求 URL 都必须带 `?sharecode=<分享码>`（GET / POST 都要带）**，漏了会被部署网关 403 拦截。
+> 「复制给 AI」输出的都是拼好的完整地址；`GET /api/docs?sharecode=…` 的 `full_urls` 字段也给出全部完整地址；
+> `skills/itlzmc-plugin-dev/scripts/publish_plugin.py` 会自动给每个 URL 拼 sharecode，别手写地址。
+
+匿名自检 `POST /api/plugins/validate?sharecode=… {"code":"..."}` 不需要 Key；完整端点说明见 `GET /api/docs?sharecode=…`。账号与已上架插件存服务端 `data/`（静态访问已封禁），开发者 Key 存浏览器 `localStorage: itlzmc.market.dev`。离线版（APK / EXE）没有市场服务，内置官方插件照常可用。
+
+
+标题界面 →「**插件市场**」（`ITLZMC.MarketScreen`），三个页签 + 底部常驻按钮，**完全离线可用**：
+
+| 页签 | 功能 |
+| --- | --- |
+| 插件市场 | **5 款官方插件**（双倍掉落 / 安宁之夜 / ITLZ 发光灯 / 插件工具箱 / **连锁挖矿**）+ 服务端已上架的社区插件，一键安装 / 卸载、下载 `.js` 源码 |
+| 已安装 | 查看与开关所有已加载插件、添加自定义插件 URL、重载生效 |
+| 创作插件 | 选能力（增加指令 / 修改机制 / 渲染贴图）+ 填名称 → 生成完整可运行源码 → 下载 `.js` 或直接安装并启用 |
+| 一键下载 AI Skill | `ITLZMC-AI-SKILL.zip` 以 base64 内嵌在游戏里，点击直接下载，不依赖服务器或外网 |
+
+安装状态存 `localStorage: itlzmc.market.installed`，自创插件存 `itlzmc.market.created`；一键安装 / 安装并启用会自动重载并立即生效。官方插件源码同步放在 `plugins/store/`，市场里的代码内嵌在 `js/plugins.js`，**网页版 / EXE / APK 都不需要联网或重编译**。
+
+**给 AI 的 SKILL**：`skills/itlzmc-plugin-dev/`（也随 `ITLZMC-AI-SKILL.zip` 单独分发，执行 `bash scripts/install.sh` 可装到 `~/.codebuddy/skills/`，或直接在游戏里「一键下载」）。内含 `SKILL.md`（工作流、硬约束、配方、**手机端按键**章节、验收清单）、**五套**可复制模板（含 `keymap-plugin.js` 连锁挖矿）、`references/` **五份**参考（API / EVENTS / PLUGIN-PACK / **KEYS 跨端按键** / **MARKET-API 发布**）、`scripts/validate_plugin.py` 静态校验、`scripts/doctor.py` 插件医生（AI 改插件改到失效时输出中文定位）、`scripts/publish_plugin.py` 发布 CLI（自动拼 sharecode）与 `scripts/verify_plugin.py` 浏览器验收。AI 加载后能按规范写出插件并自行校验、发布、验收、部署。
+
+**示例**（`plugins/examples/`，默认**不**加载，用 `?plugin=plugins/examples/xxx` 指定）：
+
+| 文件 | 演示 |
+| --- | --- |
+| `itlzmc-demo-texture.js` | 内嵌 PNG 贴图 + 发光方块 + 配方 |
+| `itlzmc-demo-mechanic.js` | 5 个机制钩子（破坏 / 掉落 / 伤害 / 指令 / tick） |
+| `itlzmc-demo-command.js` | 3 条自定义指令（含别名、参数） |
+| `itlzmc-demo-plugin-pack.zip` | `plugin.json` 声明式插件包（`main` 入口 JS + 贴图） |
+| `itlzmc-vein-miner.js` | 跨端按键：波浪键连锁挖矿，手机端自动生成虚拟按钮（市场同款源码） |
+
+## 贴图与插件包
+
+`js/plugins.js` 提供纯本地的贴图覆盖，**不依赖任何外部平台**。它在所有游戏脚本之后、`new Game()` 之前完成加载（`main.js` 先 `await ITLZMC.Plugins.ready()`），贴图图集会在渲染器初始化前就绪；单个包出错被隔离成一条记录，不影响游戏。
+
+**交付物**：`/workspace/ITLZMC-资源包.zip` 是从游戏图集导出的贴图模板，共 **2652 个文件**（2091 张命名贴图 + 559 张图集空位贴图 + `pack.mcmeta` + 说明）。解压后可改任意 PNG（保持 16×16、PNG、文件名不变），重新打包成带 `plugin.json` 的**原生插件包**放回 `plugins/` 或填 URL 即生效；`skills/itlzmc-plugin-dev/templates/plugin-pack/make_pack.py` 能直接生成这种模板，**不需要重新编译 APK / EXE**。
+
+| 加载方式 | 用法 |
+| --- | --- |
+| 服务端自动发现 | 把 `.zip` 放进 `plugins/`，启动即加载（`/api/plugins` 返回清单） |
+| URL 参数 | `?plugin=plugins/xxx.zip`，可重复写多个 `?plugin=` |
+| 游戏内添加 | 标题界面「插件市场」→「已安装」→ 添加插件 URL，填完重载 |
+| 开关 / 移除 | 市场里点条目切换开/关，状态存 `localStorage`，重载生效 |
+
+**目录约定**
+
+| 路径 | 作用 |
+| --- | --- |
+| `plugin.json` | ITLZMC 原生插件包**唯一**被识别的清单 |
+| `assets/<命名空间>/textures/block/<name>.png` | 方块 3D 面贴图，按名字覆盖图集 |
+| `assets/<命名空间>/textures/item/<name>.png` | 背包 2D 图标，映射 `i_<name>`；找不到就跳过，**绝不串到同名方块贴图** |
+| `assets/itlzmc/atlas/<数字>.png` | ITLZMC 扩展：按 tile 索引直接覆盖图集里的无名空位 |
+
+`block/` 与 `item/` 严格分离：本游戏里方块贴图和背包图标是两套素材，同名时若互相覆盖，背包图标会被画成方块侧面（贴图不一致）。路径支持 `block / item / entity / gui` 等任意子目录与任意命名空间。
+
+**默认修复包**：`plugins/itlzmc-builtin-fix.zip` 随服务自动加载，补上两张全透明贴图（`redstone_dust_overlay`、`i_leather_chestplate_overlay`）。完整模板包放进 `plugins/` 会自动覆盖全部 2650 张贴图（含 559 个空位），并行解码约 1~2 秒，实测零报错。
+
+**命名空间兼容**：导入原版 Java 存档或执行命令时，`xxx:yyy` 这类带命名空间的 ID 会先去掉前缀再查表；查不到的方块 / 物品走已有的降级映射，不会中断导入流程。
+
+## 修复的问题
+
+| 问题 | 修复 |
+| --- | --- |
+| 启动报 2 个 403 / CORS 错误 | 移除外部请求源 |
+| 开始屏幕 / 性能检测 / 设备检测被误删 | 以原实现为骨架恢复引导链 |
+| 皮肤界面红字「联机服务器没有回应」 | 同源 `/api/skin` 代理 + 明确中文降级提示 |
+| 多人游戏入口消失 | 恢复菜单按钮、完整大厅 UI 与本地房间联机 |
+| 联机必须登录 / 关注 / 解锁 | 门槛放行，本地身份可直接开房与加入 |
+| 手机上残留旧脚本，大厅红字「还没有配置联机服务器地址（js/netconfig.js）」 | 地址内联 + 同源兜底 + 全脚本版本号 + `no-store`，无需玩家清缓存或改配置 |
+| 点「开房间」黑屏卡死 / 进房间报「没连上房主」 | 开房先连服务器再准备世界并显示邀请码界面；联机数据改由服务器中转，不再依赖 WebRTC 打洞 |
+| 加载层停在 100% 永久盖住游戏 | 轮询持续兜底 + rAF + setTimeout |
+| 联机时频繁出现「和游戏服务器的连接断了：已经在房间里的朋友不受影响，新的人进不来了」黄字、客人被踢回标题 | 服务端 20s ping + 客户端 20s 心跳防止空闲掐线；房主/客人断线进入宽限期，自动重连并恢复原房间与槽位，掉线期间数据帧暂存补发 |
+| 手机切后台 / 网络抖动后新玩家进不来 | 房主重连后房间与原客人原样恢复，公开列表重新可见，不再需要重开房间 |
+| 启动失败时加载层遮住错误框 | 实时查询 `#err`，立即让位 |
+| 装扮「保存」弹登录框 / 装扮被锁 | 本地身份 + `localStorage` + 全解锁 |
+| 涂蜡铜门等 4 个物品图标白块 | `T()` 加 `i_waxed_* → i_*` 别名回退 |
+| 控制台每帧刷 `missing tile` | `all` 静默、其余只警告一次 |
+| 皮肤解码时 Canvas2D 回读警告 | `getContext('2d', { willReadFrequently: true })` |
+| 选项里的扩展入口全被禁用 | 接入 ITLZMC 原生插件系统，标题界面提供「插件市场」入口 |
+| 带命名空间的存档 ID（`xxx:yyy`）被当成未知，导入流程易中断 | 任意命名空间前缀统一剥离后再查表，查不到走降级映射 |
+| 图集 2650 个索引里有 **559 个有图案却没名字**，按名字替换不到，造成空位贴图不一致 | 新增 `assets/itlzmc/atlas/<索引>.png` 按索引覆盖通道；贴图模板把这 559 张一并导出，可逐张编辑 |
+| `redstone_dust_overlay` 被 12 处红石模型引用却是全透明；`i_leather_chestplate_overlay` 同样全透明导致皮革甲染色层失效 | 按基础贴图重建两张 overlay，随默认修复包自动加载 |
+| 背包玩家预览区是一整块纯黑，人物像贴在黑板里 | 预览前铺浅灰凹槽 + 高光/阴影边，人物轮廓正常显示 |
+| 拖少量物品划过多个空格时（`2 个拖 3 格`）`floor(2/3)=0` 直接放弃，玩家觉得「拖了没反应」 | 改为每格至少 1 个，直到把光标里的物品分光 |
+| 合成输出格：手里已有同类物品且放不下整组时静默无反应 | 放不下整组时明确提示且不消耗产物（避免物品凭空消失） |
+| 完整贴图包 2650 张贴图逐个串行解码会拖慢启动 | `flushTextures` 改为并行解码、按序绘制，保持后加载覆盖先加载的语义 |
+| `block/` 与 `item/` 同名贴图互相覆盖，方块侧面被画进背包图标 | 两类路径严格分离，`item/` 只认 `i_` 图标名 |
+| 只有贴图加载器，没有插件 / 机制 / 指令能力 | 升级为插件系统 API 1.0：清单规范、14 组机制钩子、指令注册、任意方法包装 |
+| `ITLZMC.plugin is not a function`（API 只挂在 `Plugins` 上，没挂到 `window.ITLZMC`） | 补挂 `ITLZMC.plugin` / `ITLZMC.register` 别名 |
+| 不支持 Mod / 模组却留着 Forge / Fabric 资产识别 | 彻底删除 `.jar`、`mods.toml`、`fabric.mod.json`、`mcmod.info` 兼容层，只保留 ITLZMC 原生插件 |
+| 插件只能手填 URL，没有市场也没有创作入口 | 标题界面新增「插件市场」：一键安装官方插件、创作自己的插件、一键下载 AI Skill |
+| 管理界面能力标签中英文混排（`["command","指令"]`） | 统一归一化为中文标签并去重 |
+
+## 目录结构
+
+```
+ITLZMC/
+├── index.html              # 入口（加载动画）
+├── server.js               # 一体化服务：静态 + REST + /p2p 信令 + /api/skin + /api/plugins
+├── package.json            # main: server.js，部署时注入 PORT
+├── start.sh                # 一键启动
+├── icon.jpg
+├── PROJECT_INFO.json       # 运行文件清单与字节数
+├── README.md
+├── js/                     # 96 个 JS 模块
+│   ├── assets.js           # 全部贴图 base64 内嵌
+│   ├── onboard.js          # 首次进入引导
+│   ├── perf.js / touch.js  # 画质档位与设备判定
+│   ├── net.js              # 联机客户端、房间服务 REST、多人游戏界面
+│   ├── p2p.js              # 本地房间与大厅入口补丁
+│   ├── netconfig.js        # 同源房间服务地址
+│   ├── plugin-keys.js      # 插件按键引擎：自动检测源码按键 + 桌面转发物理键 + 手机虚拟按钮
+│   └── plugins.js          # 原生插件系统 API 1.0 + 插件市场（清单 / 事件总线 / 贴图 / 指令 / 按键）
+├── plugins/                # 唯一自动发现目录：.js 插件 / .zip 插件包
+│   ├── itlzmc-builtin-fix.zip  # 内置贴图修复插件包
+│   ├── store/              # 4 款官方插件源码（市场内已内嵌，供下载 / 分享）
+│   └── examples/           # 4 个示例（不自动加载，用 ?plugin= 指定）
+├── skills/itlzmc-plugin-dev/  # 给 AI 的插件开发 SKILL（模板 / 参考 / 校验 / 验收脚本）
+└── sounds/sfx/             # 4849 个 .m4a 音效
+
+ITLZMC-资源包.zip            # 独立交付：图集贴图模板（2652 个文件），可打成原生插件包
+ITLZMC-AI-SKILL.zip          # 独立交付：AI 插件开发技能包
+```
+
+## 桌面与移动端
+
+| 端 | 目录 | 成品 | 说明 |
+| --- | --- | --- | --- |
+| 网页 / 本地服务 | `ITLZMC/` | `node server.js` | 浏览器直接玩，联机同源 |
+| Windows | `ITLZMC-Windows/` | `ITLZMC.exe` | Rust + tao + wry，原生窗口内嵌 WebView2，双击即用 |
+| Android | `ITLZMC-Android/` | `ITLZMC.apk` | 全屏 WebView，硬件加速，已签名可安装 |
+
+三个端都指向同一个云端同源服务，地址已内置，**不需要用户配置任何东西**。各自的完整源码、构建脚本与运行要求见对应目录的 README。
+
+## 验证结果
+
+Playwright + Chromium（软件渲染）实测：
+
+- `加载动画 → 协议 → 玩家类型 → 画质检测 → 设备检测 → 差异说明 → 标题 → 建世界 → state=play` PASS
+- `标题 → 多人游戏 → 开房间 → 第二客户端加入 → 公开房间列表 → 正版皮肤查询` PASS：房主 `state=open` 且 `game.state=play`、客人收到 `joined` + SDP offer、房主收到 `peer`、公开列表出现房间、皮肤查询返回「找到了：Notch（经典手臂）」
+- **缓存与自动配置**：把 `NET_CONFIG.rooms` 强行置空后 `RoomService.base()` 仍返回 `location.origin`；90 个脚本全部带 `?v=qiumc15`；HTML/JS 响应 `no-store` PASS
+- **大厅无红字**：`note=''`、列表加载完成、按钮为「开房间」；一键开房后「公开房间」与「我的房间」都出现该房间；无效邀请码明确提示且完全不连 `/ws` PASS
+- **0 console error、0 warning、0 失败请求、0 外部 HTTP 请求**
+- 95 个 JS（94 个前端模块 + `server.js`）全部通过 `node --check`
+- 品牌 / 作者 / 平台字样残留 0 处；运行代码外部地址 0 个
+- **断线重连协议验收 9 项 PASS**：房主掉线房间保留且客人不被踢、房主重连 `resumed=true` 并拿回原槽位、客人掉线房主不收 `gone`、掉线期间 3 帧数据暂存并在重连后补发、双向中继恢复正常、二次短暂掉线无损恢复
+- **Windows 端**：`x86_64-pc-windows-gnu` 交叉编译产出 `ITLZMC.exe`（Rust + tao + wry，原生窗口内嵌 WebView2）
+- **安卓端**：`aapt2 → javac → d8 → zipalign → apksigner` 产出 `ITLZMC.apk`，v1/v2/v3 签名校验通过，`aapt dump badging` 确认包名、图标、权限与启动 Activity
+- **原生插件系统 API 1.0**：14 组机制钩子全部挂载；示例插件清单 / 计数正确（`blocks:1`、`hooks:5`、`commands:3`）；发光方块 `BID=3900`、图集索引 2650 的像素实测生效；`dropItem` / `blockBreak` / `command` / `tick` 钩子真实触发；`/itlzmc` `/qmgive` `/qmstat` 回显正常；`plugin.json` 声明式插件包 `main` 执行并注册 `/qpack`；坏 URL 隔离成 `HTTP 404` 且不影响其它插件；`plugins/` 目录零参数自动发现通过；进 `play` 画面正常，零 console error / 零外部请求
+- **插件市场（本轮）**：标题界面「插件市场」入口可进；4 款官方插件一键安装 / 卸载并重载生效；创作向导生成完整可运行源码并可下载 / 安装；「一键下载 AI Skill」下载出的 zip 与 `ITLZMC-AI-SKILL.zip` 字节一致；全局无 `ITLZMC.Mods` / `.jar` / Forge / Fabric 残留
+- **AI SKILL 自检**：`validate_plugin.py` 对 5 个模板 / 示例输出 `"ok": true`；`verify_plugin.py` 加载示例后 `api=1.0`、零 console error
+- **跨端按键（本轮）**：`P.addKey` 声明 → `ITLZMC.Plugins.keybinds()` 登记 `Backquote`；老写法插件静态扫描出按键码并标记 `implicit`；触屏设备进入 `play` 后自动生成「连锁挖矿」虚拟按钮，点按触发 `onDown`/`onUp` 并写 `g.keys`；桌面物理键转发生效；服务端 `validatePlugin` 把 `keybinds` 写进 `report` 与 `/api/market`
+- **API 地址 sharecode（本轮）**：`aiPrompt` / 开发者中心 / `GET /api/docs` 的 `full_urls` / `publish_plugin.py` 全部输出带 `?sharecode=` 的完整地址；漏带时网关 403 的说明写入 `MARKET-API.md`
+# mc
+
